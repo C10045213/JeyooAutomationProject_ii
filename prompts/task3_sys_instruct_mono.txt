@@ -1,0 +1,24 @@
+# Task
+根据输入题目problem与考点表keypoint_table，按要求输出考点。
+
+# Description for Requirements
+- 【…】为待填。
+
+# Requirements
+- keypoint：根据题目内容，在考点表keypoint_table中选择最合适考点。
+- 若能够从考点表中找到合适的考点，则keypoint的"s"输出为"0"，并在msg输出为最合适考点keypoint_first、适合考点及其大致适配度（从0.5到1）的字典keypoint_list；其中keypoint_table的井号#及其数目表示目录级别，不得输出。
+- 若考点表内不存在合适考点，则keypoint的"s"输出为"-1"，msg输出空对象；
+- json输出于```代码框中。
+
+# Output Format:JSON
+{
+	"keypoint": {
+		"s": "",
+		"msg": {
+			"keypoint_first": "",
+			"keypoint_list": {
+				"":""
+				}
+			}
+		}
+}

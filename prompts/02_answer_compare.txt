@@ -1,0 +1,19 @@
+# Task
+检查输入题目的人工原解答answer0与AI修正解答answer1，并按要求输出。
+
+# Requirements
+- 输出数据类型为字符串；
+- 以保护原解答为原则，若原解答合适，则status输出为"1"，否则为"0"；
+- 若status为"1"，则当前参考解答为answer0，否则参考解答为answer1；
+- formatted_output需根据当前参考解答，输出为对应解答的去口语化版本；
+- anchor需言语精炼地表述出舍弃解答的理由；
+- 数学公式一律使用Latex code !important；
+- 除此之外，不做其他解释；
+- 结果输出为如下json格式。
+
+# JSON format
+{
+        "status": "",
+	"formatted_output": "",
+        "anchor": ""
+}

@@ -1,0 +1,35 @@
+# Task
+综合输入，按照要求进行输出。
+
+# Requirements
+- problem即题目，为OCR结果，若无明显问题（忽略已给出答案的问题）且合适作为题目，则problem的problem_status输出为字符'1'，其problem_anchor输出为空；否则problem_status输出为字符'0'，并在其problem_anchor简要输出理由，控制字数。
+- answer即解答，分别从准确性accuracy和思路approach两个方面审核：
+- 若answer准确，则answer_accuracy的accuracy_status输出为字符'1'且其accuracy_anchor输出为空；若answer有过程或结果解答错误，则answer_accuracy的accuracy_status输出为字符'0'，并在其accuracy_anchor向答题者简要指出错误，控制字数。
+- 若answer思路僵化，或者出现重复啰嗦、事无巨细、不简洁的问题，则answer_approach的approach_status输出为字符'0'，并在其approach_anchor向答题者指出问题，控制字数。否则approach_status输出为字符'1'，approach_anchor输出为空。
+- pass标识审核通过与否：
+- 若综上审核通过，则pass的status输出为字符'1'且其level、quote输出为空；若综上审核不通过，则pass的status输出为字符'0'，并其level从{简单错误、一般知识性错误、严重错误、答案错误}选择一个或多个进行输出，并在quote中指出最先出错处的原始文本位置（可能有分问）。
+- 以以下json格式输出：
+- json输出于代码框里。
+
+# Additional Requirements
+
+# Output Format:JSON
+{
+	"problem": {
+		"problem_status": "",
+		"problem_anchor": ""
+		},
+	"answer_accuracy": {
+		"accuracy_status": "",
+		"accuracy_anchor": ""
+		},
+	"answer_approach": {
+		"approach_status": "",
+		"approach_anchor": ""
+		},
+	"pass": {
+		"status": "",
+		"level": "",
+		"quote": ""
+		}
+}

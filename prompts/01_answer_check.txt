@@ -1,0 +1,25 @@
+# Task
+检查输入题目problem与其解答answer，并按要求输出。
+
+# Requirements
+- 输出数据类型为字符串；
+- 若problem输入合适，则problem下的status输出为"1"，否则为"0"，并在其suggestion下输出改动建议；
+- 若answer输入合适，则answer下status输出为"1"，否则为"0"，并在其suggestion下直接输出为正确解答，而非分析；
+- status为"1"时，suggestion输出为空；
+- 数学公式一律使用Latex code !important；
+- 除此之外，不做其他解释；
+- 结果输出为如下json格式。
+
+# JSON format
+{
+	"problem": {
+		"status": "",
+		"suggestion": ""
+	},
+	"answer":{
+		"status": "",
+		"suggestion": ""
+	}
+}
+
+

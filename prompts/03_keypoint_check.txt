@@ -1,0 +1,24 @@
+# Task
+根据输入题目problem、解答answer、考点keypoints与考点目录keypoint_table，按要求输出。
+
+# Requirements
+- 输出数据类型为字符串；
+- 当keypoints相对题目信息没有偏离太远，认为keypoints合适；
+- 若keypoints合适，则status输出为"1"，suggestion输出为""；
+- 若keypoints不合适，则status输出为"0"，并在suggestion根据考点目录keypoint_table输出最合适考点keypoint_first、适合考点及其大致权重（从0.5到1）的字典keypoint_list；
+- 若考点目录内不存在合适考点，则status输出为"-1"，suggestion直接输出为考点错误信息；
+
+- 除此之外，不做其他解释；
+- 结果输出为如下json格式。
+
+# JSON format
+{
+	"status": "",
+	"suggestion": {
+		"keypoint_first": "",
+		"keypoint_list": {
+			"": ""
+			}		
+}
+
+# Input Data

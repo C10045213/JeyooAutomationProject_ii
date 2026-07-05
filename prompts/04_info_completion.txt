@@ -1,0 +1,24 @@
+# Task
+根据输入题目problem、解答answer、分析analysis、点评discuss与原考点keypoint以及附加信息keypoint_plus，按要求输出。
+
+# Requirements
+- 输出数据类型为字符串；
+- 分析analysis为解答之前的环节，点评discuss为解答之后的环节；
+- 若输入analysis合适，则analysis_status输出为"1"，analysis输出为空；否则analysis_status输出为"0"，且analysis根据解答answer，输出分析内容，简明扼要，控制字数；模板：【…（知识点）】，即可求解。例如：（1）利用积分换元法，即可求解。（2）结合牛顿莱布尼茨公式，通过求导判断单调性即可。
+- 若输入discuss合适，则discuss_status输出为"1"，discuss输出为空；否则discuss_status输出为"0"，且discuss根据解答answer，输出点评内容，简明扼要，控制字数；模板：本题主要（综合）考查【…】，属于【…（难度）】题。例如：本题主要考查积分换元法，属于基础题。再例如：本题综合考查微分中值定理与数列极限定义的结合，属于中档题。
+- 数学公式（包括上下标）一律使用Latex源代码，公式符号一律使用行内$…$符号；
+- 难度定义：易：考生理应熟练掌握的常见题型；较易：熟练掌握题型的复杂变形；中档：解题思路不寻常且过程繁琐；较难：涉及面广、涉及不常见的特殊技巧；难：难度断档。其中“易、较易”为基础题，“中档”为中档题，“较难、难”为困难题。
+- 难度difficulty输出为{1（难），2（较难），3（较难-），4（中档），5（中档-），6（较易），7（较易-），8（易），9（易-）}中的数字字符str。
+- 除此之外，不做其他解释；
+- 结果输出为如下json格式。
+
+# JSON format
+{
+	"analysis_status": "",
+	"analysis": "",
+	"discuss_status": "",
+	"discuss": "",
+	"difficulty": ""
+}
+
+# Input Data

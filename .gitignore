@@ -1,0 +1,10 @@
+api.json
+.env
+__pycache__/
+*.pyc
+.vscode/
+*.txt
+!prompts/*.txt
+*.doc
+
+*.spec
