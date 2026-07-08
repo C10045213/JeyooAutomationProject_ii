@@ -5,7 +5,8 @@ import markdown
 # PyQt6 导入
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,  QPushButton,
                             QTextEdit, QSplitter, QLabel, QInputDialog, QMessageBox, QCheckBox, QComboBox, QMenu, QDialog)
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QTimer
+from PyQt6.QtGui import QActionGroup
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtGui import QColor, QAction
 
@@ -289,6 +290,7 @@ class MainWindow(QMainWindow):
         monoc_menu.addAction(self.change_to_mono3c)
 
         help_menu = menubar.addMenu("help")
+        help_menu.setDisabled(True)
         self.about = QAction("关于.", self)
         self.about.triggered.connect(self.show_about_dialog)
         help_menu.addAction(self.about)
@@ -317,7 +319,15 @@ class MainWindow(QMainWindow):
         title_layout.addStretch()
 
         self.btn_fill = QPushButton("填入")
-        self.btn_save_n_refresh = QPushButton("保存")
+        self.btn_save_composite = QPushButton("保存")
+
+        # 长按展开保存模式菜单
+        self._save_long_press_timer = QTimer()
+        self._save_long_press_timer.setSingleShot(True)
+        self._save_long_press_timer.timeout.connect(self._show_save_mode_menu)
+        self._save_menu_shown = False
+        self.btn_save_composite.pressed.connect(self._on_save_pressed)
+        self.btn_save_composite.released.connect(self._on_save_released)
         self.toggle_autofill = QCheckBox("AUTO")
 
         # 表单选择下拉按钮
@@ -328,18 +338,33 @@ class MainWindow(QMainWindow):
         for key, label in form_options.items():
             action = self.form_menu.addAction(label)
             action.setCheckable(True)
-            # # 默认选项
-            # if key == "keypoint_plus":
-            #     action.setChecked(False)
-            # else:
             action.setChecked(True)
             action.toggled.connect(self._on_form_selection_changed)
             self.form_actions[key] = action
         self.form_select_btn.clicked.connect(self._show_form_menu)
 
+        # 保存模式下拉菜单 (长按触发)
+        self.save_mode_menu = QMenu(self.btn_save_composite)
+        self.save_mode_group = QActionGroup(self.save_mode_menu)
+        self.save_mode_group.setExclusive(True)
+        save_mode_options = [
+            (0, "仅保存/提交"),
+            (1, "保存并下一页"),
+            (2, "保存并上一页"),
+            (3, "保存并刷新"),
+        ]
+        for mode, label in save_mode_options:
+            action = self.save_mode_group.addAction(label)
+            action.setCheckable(True)
+            action.setData(mode)
+            if mode == 0:
+                action.setChecked(True)
+            action.toggled.connect(self._on_save_mode_changed)
+        self.save_mode_menu.addActions(self.save_mode_group.actions())
+
         title_layout.addWidget(self.form_select_btn)
         title_layout.addWidget(self.btn_fill)
-        title_layout.addWidget(self.btn_save_n_refresh)
+        title_layout.addWidget(self.btn_save_composite)
         title_layout.addWidget(self.toggle_autofill)
 
         result_layout.addWidget(title_widget)
@@ -386,7 +411,6 @@ class MainWindow(QMainWindow):
         self.btn0.clicked.connect(self.worker.request_halt)
 
         self.btn_fill.clicked.connect(self.worker.request_fill)
-        self.btn_save_n_refresh.clicked.connect(self.worker.request_save_refresh)
         self.toggle_autofill.stateChanged.connect(self.on_auto_fill_changed)
     
 
@@ -436,6 +460,26 @@ class MainWindow(QMainWindow):
         selected = {key for key, action in self.form_actions.items() if action.isChecked()}
         self.worker.set_selected_forms(selected)
 
+    def _on_save_pressed(self):
+        self._save_menu_shown = False
+        self._save_long_press_timer.start(500)
+
+    def _on_save_released(self):
+        if self._save_long_press_timer.isActive():
+            self._save_long_press_timer.stop()
+            if not self._save_menu_shown:
+                self.worker.request_save_composite()
+
+    def _show_save_mode_menu(self):
+        self._save_menu_shown = True
+        self.save_mode_menu.exec(self.btn_save_composite.mapToGlobal(
+            self.btn_save_composite.rect().bottomLeft()))
+
+    def _on_save_mode_changed(self):
+        action = self.sender()
+        if action and action.isChecked():
+            self.worker.request_set_save_mode(action.data())
+
     def _compute_form_enabled(self):
         """表单按钮启用状态——由 current_strategy 类型决定，维护操作中强制禁用"""
         if self.worker.current_strategy is None:
@@ -455,7 +499,7 @@ class MainWindow(QMainWindow):
     def _apply_form_buttons(self, enabled: bool):
         self.form_select_btn.setEnabled(enabled and not self.worker.is_task3_family)
         self.btn_fill.setEnabled(enabled)
-        self.btn_save_n_refresh.setEnabled(enabled)
+        self.btn_save_composite.setEnabled(enabled)
         self.toggle_autofill.setEnabled(enabled)
 
     def on_worker_busy_API(self, triggered: bool):
@@ -466,7 +510,7 @@ class MainWindow(QMainWindow):
         self.btn1.setEnabled(enabled and has_strategy)
         self.btn0.setEnabled(enabled and has_strategy)
         self.btn_fill.setEnabled(enabled)
-        self.btn_save_n_refresh.setEnabled(enabled)
+        self.btn_save_composite.setEnabled(enabled)
         self.restarter.setEnabled(enabled)
         self.re_connxion.setEnabled(enabled)
         self.re_choose_api.setEnabled(enabled)
@@ -550,7 +594,6 @@ class MainWindow(QMainWindow):
             # text = re.sub(r'(?<!\*)\^\*(?!\*)', r'^\\*', text)
             # text = text.replace('_{', '\\_{')
             text = text.replace('\\u200b', '')
-            print(repr(text))
             return text
         
         markdown_text = texreplace(markdown_text) 

@@ -8,25 +8,26 @@ import httpx
 load_dotenv(override = True)  # 从 .env 文件加载环境变量
 
 class AsyncAnalyser:
-    def __init__(self,max_concurrent_calls = 502):
+    def __init__(self, max_concurrent_calls=502, stop_event=None):
+        self._stop_event = stop_event
 
-        # httpx 层面强制超时：总超时180s，连接10s，防止 TCP 层面卡死导致 asyncio.wait_for 无法取消
-        _httpx_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(180.0, connect=10.0),
+        # httpx 层面强制超时：总超时180s，连接10s，pool 10s，防止 TCP 层面卡死导致 asyncio.wait_for 无法取消
+        self._httpx_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(180.0, connect=10.0, pool=10.0),
             limits=httpx.Limits(max_connections=500, max_keepalive_connections=100),
         )
 
         self.deepseek_model = AsyncOpenAI(
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url="https://api.deepseek.com",
-            http_client=_httpx_client,
+            http_client=self._httpx_client,
             max_retries=0
             )
 
         self.doubao_model = AsyncOpenAI(
             api_key=os.getenv("DOUBAO_API_KEY"),
             base_url="https://ark.cn-beijing.volces.com/api/v3",
-            http_client=_httpx_client,
+            http_client=self._httpx_client,
             max_retries=0
             )
 
@@ -35,14 +36,14 @@ class AsyncAnalyser:
         self.qwen_model = AsyncOpenAI(
             api_key=os.getenv("QWEN_API_KEY"),
             base_url="https://ws-d6f3io2jewpkyjuw.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-            http_client=_httpx_client,
+            http_client=self._httpx_client,
             max_retries=0
             )
 
         self.github_model = AsyncOpenAI(
             api_key=os.getenv("GITHUB_API_KEY"),
             base_url="https://models.github.ai/inference",
-            http_client=_httpx_client,
+            http_client=self._httpx_client,
             max_retries=0
             )
         
@@ -65,11 +66,18 @@ class AsyncAnalyser:
             "99": ("QwenV", self._call_qwenvl)
         }
             
+    async def close(self):
+        if self._httpx_client:
+            await self._httpx_client.aclose()
+            self._httpx_client = None
+
     async def call_analyser(self, content: any, num: str, sys_instruct: str = "") -> str:
         _, call_func = self.model_map.get(num, ("Google Gemini", self._call_google_flash))
         max_retries = 3
         last_error = ""
         for attempt in range(max_retries):
+            if self._stop_event and self._stop_event.is_set():
+                return ""
             try:
                 async with self.semaphore:
                     result = await asyncio.wait_for(call_func(content, sys_instruct), timeout=100)
@@ -82,6 +90,8 @@ class AsyncAnalyser:
             except Exception as e:
                 last_error = str(e)
             if attempt < max_retries - 1:
+                if self._stop_event and self._stop_event.is_set():
+                    return ""
                 wait = 2 ** attempt
                 print(f"API 调用失败[{num}](attempt {attempt+1}): {last_error}, {wait}s后重试...")
                 await asyncio.sleep(wait)

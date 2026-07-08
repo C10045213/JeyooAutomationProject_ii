@@ -1,4 +1,5 @@
 import AI_analyse_V1 as analyser
+import regex_formatting as refmt
 import os
 import pyperclip
 import base64
@@ -17,7 +18,7 @@ class MonoQualityCheckStep2Concurrent():
         self.log = log_callback
         self.result = result_callback
         self.stop = stop_signal
-        self.analyser = analyser.AsyncAnalyser()
+        self.analyser = analyser.AsyncAnalyser(stop_event=self.stop)
         self._user_input = input_num_for_AI
         self.page_1: Page = None
 
@@ -28,8 +29,9 @@ class MonoQualityCheckStep2Concurrent():
 
         self._fill_requested = threading.Event()
         self._fill_lock = asyncio.Lock()
-        self._save_refresh_requested = threading.Event()
-        self._save_refresh_lock = asyncio.Lock()
+        self._save_composite_requested = threading.Event()
+        self._save_composite_lock = asyncio.Lock()
+        self._save_func = [self._save]
         self._auto_fill_enabled = False
         self._selected_forms = {"problem", "keypoint", "keypoint_plus", "analysis", "discuss", "difficulty", "answer"}
 
@@ -40,9 +42,20 @@ class MonoQualityCheckStep2Concurrent():
             self._fill_requested.set()
             self.log("收到填充指令...")
 
-    def request_save_refresh(self):
-        self._save_refresh_requested.set()
-        self.log("收到保存/刷新指令...")
+    def request_save_composite(self):
+        self._save_composite_requested.set()
+        self.log("收到保存指令...")
+
+    def set_save_mode(self, mode):
+        action_map = {
+            0: [self._save],
+            1: [self._save, self._next],
+            2: [self._save, self._previous],
+            3: [self._save, self._refresh]
+        }
+        self._save_func = action_map.get(mode, [self._save])
+        mode_names = {0: "仅保存", 1: "保存并下一页", 2: "保存并上一页", 3: "保存并刷新"}
+        self.log(f"保存模式已更新: {mode_names.get(mode, '模式设置异常')}")
 
     def set_auto_fill(self, enabled: bool):
         self._auto_fill_enabled = enabled
@@ -109,8 +122,6 @@ class MonoQualityCheckStep2Concurrent():
         self.log(f"当前题目SN: {sn}")
         self.log(".../正在获取题目信息")
 
-        problem_text = await self._copy_problem()
-
         choices_img = await self._choices_screenshot()
         if choices_img is not None and choices_img != '':
             self.log("../正在对题目选项进行OCR...")
@@ -118,8 +129,10 @@ class MonoQualityCheckStep2Concurrent():
             content_payload = []
             content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{choices_pic64}"}})
             choices_text = await self._problem_ocr(content_payload)
-            if choices_text == '':
+            if choices_text == '' or type(json.loads(choices_text)) == list:
                 self.log("请求超时(300s)，或识图失败。")
+                choices_text = '{"OCR_Result": "OCR_Failed"}'
+            choices_text = json.loads(choices_text)["OCR_Result"]
             try:
                 if os.path.exists(choices_img):
                     os.remove(choices_img)
@@ -128,10 +141,11 @@ class MonoQualityCheckStep2Concurrent():
         else:
             choices_text = ''
 
-        keypoint_text = await self._copy_keypoint()
-        answer_text = await self._copy_answer()
-        analysis_text = await self._copy_analyse()
-        discuss_text = await self._copy_discuss()
+        problem_text = refmt.process_text(await self._copy_problem())
+        keypoint_text = refmt.process_text(await self._copy_keypoint())
+        answer_text = refmt.process_text(await self._copy_answer())
+        analysis_text = refmt.process_text(await self._copy_analyse())
+        discuss_text = refmt.process_text(await self._copy_discuss())
 
         self.log(f"✔️本页题目信息获取完成")
         return (sn, {
@@ -380,13 +394,13 @@ class MonoQualityCheckStep2Concurrent():
                     elif is_filled:
                         self.log("内容已填入。")
 
-                if self._save_refresh_requested.is_set():
-                    self._save_refresh_requested.clear()
-                    async with self._save_refresh_lock:
-                        await self._save()
-                        await asyncio.sleep(1)
-                        await self._refresh()
-                        await asyncio.sleep(0.5)
+                if self._save_composite_requested.is_set():
+                    self._save_composite_requested.clear()
+                    async with self._save_composite_lock:
+                        for save_related_func in self._save_func:
+                            await save_related_func()
+                            await asyncio.sleep(1)
+                        
                         if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
                             await self.page_1.locator("div#_messsage").click()
                         if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
@@ -593,7 +607,7 @@ class MonoQualityCheckStep2Concurrent():
                 await self.page_1.wait_for_timeout(200)
                 iframe = self.page_1.frame_locator("#htmlSourceFrame")
                 textarea = iframe.locator("textarea#htmlSource")
-                method_text = self.input_dataset[problem_sn]["answer"].replace("\u200b","").replace(" ","")
+                method_text = self.input_dataset[problem_sn]["answer"]
 
                 if data["answer"]["msg"]["type"] == "简单错误":
                     msg = data["answer"]["msg"]
@@ -621,15 +635,24 @@ class MonoQualityCheckStep2Concurrent():
                 with open("datas/keypoint_table_referencing.1.md", "r", encoding="utf-8") as f:
                     keypoint_dict_origin = dict(line.strip().split(':', 1) for line in f if line.strip())
                     keypoint_dict_reversed = {key : value for value, key in keypoint_dict_origin.items()}
-                    suggested_keypoint_list = []
+                    suggested_keypoint_num_list = []
                     try:
                         for suggested_keypoint, weight in data["keypoint"]["msg"]["keypoint_list"].items():
-                            if float(weight) >= 0.8:
-                                suggested_keypoint_list.append(suggested_keypoint)
-                                await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[suggested_keypoint])
-                                await self.page_1.keyboard.down("Enter")
-                            await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[data["keypoint"]["msg"]["keypoint_first"]])
+                            if float(weight) >= 0.85:
+                                suggested_keypoint_num_list.append(keypoint_dict_reversed[suggested_keypoint])
+                        # 按长度降序排序（长串在前）
+                        sorted_kp = sorted(suggested_keypoint_num_list, key=len, reverse=True)
+                        deparent_result = []
+                        for i, s in enumerate(sorted_kp):
+                            # 检查当前字符串是否是前面某个更长字符串的前缀
+                            is_prefix = any(sorted_kp[j].startswith(s) for j in range(i))
+                            if not is_prefix:
+                                deparent_result.append(s)                      
+                        for keypoint_num in deparent_result:        
+                            await self.page_1.locator("input#Point").fill(keypoint_num)
                             await self.page_1.keyboard.down("Enter")
+                        await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[data["keypoint"]["msg"]["keypoint_first"]])
+                        await self.page_1.keyboard.down("Enter")
                     except Exception as e:
                         self.log(f"{e}")
                         print(e)
@@ -651,7 +674,7 @@ class MonoQualityCheckStep2Concurrent():
 
     async def _refresh(self):
         try:
-            await self.page_1.locator(".tablebar:nth-child(2) .tedit:nth-child(6)").click()
+            await self.page_1.get_by_role('link', name='刷新数据').first.click()
         except Exception as e:
             self.log("***※刷新异常※***")
             print(e)
@@ -659,7 +682,7 @@ class MonoQualityCheckStep2Concurrent():
 
     async def _next(self):
         try:
-            await self.page_1.locator(".tablebar:nth-child(2) .tedit:nth-child(4)").click()
+            await self.page_1.get_by_role('link', name='下一页').first.click()
         except Exception as e:
             self.log("***※前进翻页异常※***")
             print(e)
@@ -667,7 +690,7 @@ class MonoQualityCheckStep2Concurrent():
 
     async def _previous(self):
         try:
-            await self.page_1.locator(".tablebar:nth-child(2) .tedit:nth-child(2)").click()
+            await self.page_1.get_by_role('link', name='上一页').first.click()
         except Exception as e:
             self.log("***※后退翻页异常※***")
             print(e)

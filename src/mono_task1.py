@@ -1,5 +1,6 @@
 import AI_analyse_V1 as analyser
-import os,time
+import regex_formatting as refmt
+import os,time,json
 import pyperclip
 import base64
 import threading
@@ -13,7 +14,7 @@ class MonoQualityCheckStep1():
         self.log = log_callback
         self.result = result_callback
         self.stop = stop_signal
-        self.analyser = analyser.AsyncAnalyser()
+        self.analyser = analyser.AsyncAnalyser(stop_event=self.stop)
         self._user_input = input_num_for_AI
         self.page_1: Page = None
         self.page_2: Page = None
@@ -69,7 +70,8 @@ class MonoQualityCheckStep1():
             return
 
         self.log("2. 正在获取答案...")
-        answer = await self._jump_and_search_copy_and_return()
+        answer0 = await self._jump_and_search_copy_and_return()
+        answer = refmt.process_text(answer0)
 
         # 2. OCR
         self.log("3. 调用多模态LLM进行 OCR...")
@@ -78,8 +80,10 @@ class MonoQualityCheckStep1():
             return
 
         problem_alltext = await self._problem_ocr(content_payload)
-        if problem_alltext == '':
+        if problem_alltext == '' or type(json.loads(problem_alltext)) == list:
             self.log("请求超时(300s)，或识图失败。")
+            problem_alltext = '{"OCR_Result": ""}'
+        problem_alltext = json.loads(problem_alltext)["OCR_Result"]
 
         # 3. 审核
         self.log("4. 提交与 AI 审核...")

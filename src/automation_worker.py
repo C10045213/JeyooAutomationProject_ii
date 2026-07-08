@@ -27,7 +27,6 @@ class AutomationWorker(QThread):
     def __init__(self):
         super().__init__()
         self.running = True
-        self.analyser = AsyncAnalyser()
         
         # 标志位
         self._request_restart = False
@@ -46,7 +45,7 @@ class AutomationWorker(QThread):
         self._savenext_requested = False
         self._fill_requested = False
         self._auto_fill_enabled = False
-        self._selected_forms = {"problem", "keypoint", "analysis", "discuss", "difficulty", "answer"}
+        self._selected_forms = {"problem", "keypoint", "keypoint_plus", "analysis", "discuss", "difficulty", "answer"}
         self._connected = False
         self._dialog_listeners_registered = set()
         
@@ -61,7 +60,9 @@ class AutomationWorker(QThread):
         self.method_thread = None
         self.stop_signal = threading.Event()
         self.status = [0,0,0] # 状态列表，元素1对应基底进程运行中，元素2对应任务1，元素3对应任务2.
-    
+        self.analyser = AsyncAnalyser(stop_event=self.stop_signal)
+
+
     @property
     def is_busy(self):
         return any(self.status)
@@ -104,6 +105,14 @@ class AutomationWorker(QThread):
                                                  mono_task3.MonoKeypointProcess, mono_task3_concurrent.MonoKeypointProcessConcurrent)):
             return 2
         return 0
+
+    async def _cleanup_current_strategy(self):
+        """关闭当前策略的 AsyncAnalyser，释放 httpx 连接"""
+        if self.current_strategy and hasattr(self.current_strategy, 'analyser'):
+            try:
+                await self.current_strategy.analyser.close()
+            except Exception:
+                pass
 
     def request_change_strategy_to_task1(self):
         self._requested_change_to_task1 = True
@@ -154,15 +163,21 @@ class AutomationWorker(QThread):
         self._request_restart = True
         self.log_signal.emit(f"请等待...")
 
-    def request_fill(self): 
+    def request_fill(self):
         if self.current_strategy and hasattr(self.current_strategy, 'request_fill'):
             self.current_strategy.request_fill()
         else:
             self.log_signal.emit(f"未设置策略，或当前策略无此函数。")
 
-    def request_save_refresh(self):
-        if self.current_strategy and hasattr(self.current_strategy, 'request_save_refresh'):
-            self.current_strategy.request_save_refresh()
+    def request_save_composite(self):
+        if self.current_strategy and hasattr(self.current_strategy, 'request_save_composite'):
+            self.current_strategy.request_save_composite()
+        else:
+            self.log_signal.emit(f"未设置策略，或当前策略无此函数。")
+
+    def request_set_save_mode(self, mode: int):
+        if self.current_strategy and hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(mode)
         else:
             self.log_signal.emit(f"未设置策略，或当前策略无此函数。")
 
@@ -217,6 +232,7 @@ class AutomationWorker(QThread):
             if self._rechooseAPI_requested:
                 self.chooseAI_signal.emit(True)
                 self._rechooseAPI_requested = False
+                await self._cleanup_current_strategy()
                 self.client_select_request()
                 self.chooseAI_signal.emit(False)
                 self._set_idle()
@@ -278,7 +294,12 @@ class AutomationWorker(QThread):
             await asyncio.sleep(0.1)
             
         # 退出时清理
-        self.browser_manager.close()
+        await self._cleanup_current_strategy()
+        try:
+            await self.analyser.close()
+        except Exception:
+            pass
+        await self.browser_manager.close()
 
 # ========== 线程基础逻辑 ==========
     async def _do_reinit(self):
@@ -384,6 +405,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = task1.QualityCheckStep1(self.log_signal.emit,self.result_signal.emit,self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
@@ -394,6 +416,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = task2.QualityCheckStep2(self.log_signal.emit,self.result_signal.emit,self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
@@ -406,6 +429,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = mono_task1.MonoQualityCheckStep1(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         self.log_signal.emit(f"正在切换工作模式: {mono_task1.MonoQualityCheckStep1.__doc__}")
         await self._do_reinit()
@@ -414,6 +438,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = mono_task2.MonoQualityCheckStep2(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
@@ -426,6 +451,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = mono_task2_concurrent.MonoQualityCheckStep2Concurrent(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
@@ -438,6 +464,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = mono_task3.MonoKeypointProcess(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
@@ -448,6 +475,7 @@ class AutomationWorker(QThread):
         if self._user_input == '':
             self.log_signal.emit(f"未选择API！")
             return
+        await self._cleanup_current_strategy()
         self.current_strategy = mono_task3_concurrent.MonoKeypointProcessConcurrent(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)

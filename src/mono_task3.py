@@ -1,4 +1,5 @@
 import AI_analyse_V1 as analyser
+import regex_formatting as refmt
 import os
 import pyperclip
 import base64
@@ -15,15 +16,16 @@ class MonoKeypointProcess():
         self.log = log_callback
         self.result = result_callback
         self.stop = stop_signal
-        self.analyser = analyser.AsyncAnalyser()
+        self.analyser = analyser.AsyncAnalyser(stop_event=self.stop)
         self._user_input = input_num_for_AI
         self.page_1: Page = None
         self.input_data = {}
 
         self._fill_requested = threading.Event()
         self._fill_lock = asyncio.Lock()
-        self._save_refresh_requested = threading.Event()
-        self._save_refresh_lock = asyncio.Lock()
+        self._save_composite_requested = threading.Event()
+        self._save_composite_lock = asyncio.Lock()
+        self._save_func = [self._submit]
         self._auto_fill_enabled = False
 
     def request_fill(self):
@@ -31,9 +33,20 @@ class MonoKeypointProcess():
             self._fill_requested.set()
             self.log("收到填充指令...")
 
-    def request_save_refresh(self):
-        self._save_refresh_requested.set()
+    def request_save_composite(self):
+        self._save_composite_requested.set()
         self.log("收到保存/刷新指令...")
+
+    def set_save_mode(self, mode):
+        action_map = {
+            0: [self._submit],
+            1: [self._save, self._next],
+            2: [self._save, self._previous],
+            3: [self._save, self._refresh]
+        }
+        self._save_func = action_map.get(mode, [self._submit])
+        mode_names = {0: "仅提交", 1: "保存并下一页", 2: "保存并上一页", 3: "保存并刷新"}
+        self.log(f"保存模式已更新: {mode_names.get(mode, '模式设置异常')}")
 
     def set_auto_fill(self, enabled: bool):
         self._auto_fill_enabled = enabled
@@ -104,7 +117,7 @@ class MonoKeypointProcess():
 
             self.log(f"1. 本题页码为:{num}, SN：\n{problem_sn}")
             self.log("2. 正在获取题目...")
-            problem = await self._copy_problem()
+            problem = refmt.process_text(await self._copy_problem())
 
             # 2. OCR
             choices_alltext = ''
@@ -117,8 +130,10 @@ class MonoKeypointProcess():
                 content_payload = []
                 content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{choices_pic64}"}})
                 choices_alltext = await self._problem_ocr(content_payload)
-                if choices_alltext == '':
+                if choices_alltext == '' or type(json.loads(choices_alltext)) == list:
                     self.log("请求超时(300s)，或识图失败。")
+                    choices_alltext = '{"OCR_Result": "OCR_Failed"}'
+                choices_alltext = json.loads(choices_alltext)["OCR_Result"]
                 try:
                     if os.path.exists(imgs):
                         os.remove(imgs)
@@ -171,9 +186,9 @@ class MonoKeypointProcess():
                             self._fill_requested.clear()
                             self.log(f"内容已填入。")
 
-                    if self._save_refresh_requested.is_set():
-                        self._save_refresh_requested.clear()
-                        async with self._save_refresh_lock:
+                    if self._save_composite_requested.is_set():
+                        self._save_composite_requested.clear()
+                        async with self._save_composite_lock:
                             await self._submit()
                             await asyncio.sleep(1)
                             if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
@@ -316,15 +331,24 @@ class MonoKeypointProcess():
                 with open("datas/keypoint_table_referencing.1.md", "r", encoding="utf-8") as f:
                     keypoint_dict_origin = dict(line.strip().split(':', 1) for line in f if line.strip())
                     keypoint_dict_reversed = {key: value for value, key in keypoint_dict_origin.items()}
-                    suggested_keypoint_list = []
+                    suggested_keypoint_num_list = []
                     try:
                         for suggested_keypoint, weight in data["keypoint"]["msg"]["keypoint_list"].items():
-                            if float(weight) >= 0.8:
-                                suggested_keypoint_list.append(suggested_keypoint)
-                                await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[suggested_keypoint])
-                                await self.page_1.keyboard.down("Enter")
-                            await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[data["keypoint"]["msg"]["keypoint_first"]])
+                            if float(weight) >= 0.85:
+                                suggested_keypoint_num_list.append(keypoint_dict_reversed[suggested_keypoint])
+                        # 按长度降序排序（长串在前）
+                        sorted_kp = sorted(suggested_keypoint_num_list, key=len, reverse=True)
+                        deparent_result = []
+                        for i, s in enumerate(sorted_kp):
+                            # 检查当前字符串是否是前面某个更长字符串的前缀
+                            is_prefix = any(sorted_kp[j].startswith(s) for j in range(i))
+                            if not is_prefix:
+                                deparent_result.append(s)                      
+                        for keypoint_num in deparent_result:        
+                            await self.page_1.locator("input#Point").fill(keypoint_num)
                             await self.page_1.keyboard.down("Enter")
+                        await self.page_1.locator("input#Point").fill(keypoint_dict_reversed[data["keypoint"]["msg"]["keypoint_first"]])
+                        await self.page_1.keyboard.down("Enter")
                     except Exception as e:
                         self.log(f"{e}")
                         print(e)
@@ -343,11 +367,35 @@ class MonoKeypointProcess():
             print(e)
             self.stop.set()
 
+    async def _save(self):
+        try:
+            await self.page_1.get_by_role('button', name='保存').first.click()
+        except Exception as e:
+            self.log("***※保存异常※***")
+            print(e)
+            self.stop.set()
+
+    async def _refresh(self):
+        try:
+            await self.page_1.get_by_role('link', name='刷新页面').first.click()
+        except Exception as e:
+            self.log("***※刷新异常※***")
+            print(e)
+            self.stop.set()
+
     async def _next(self):
         try:
-            await self.page_1.locator(".tablebar:nth-child(2) .tedit:nth-child(4)").click()
+            await self.page_1.get_by_role('link', name='下一页').first.click()
         except Exception as e:
             self.log("***※前进翻页异常※***")
+            print(e)
+            self.stop.set()
+
+    async def _previous(self):
+        try:
+            await self.page_1.get_by_role('link', name='上一页').first.click()
+        except Exception as e:
+            self.log("***※后退翻页异常※***")
             print(e)
             self.stop.set()
 

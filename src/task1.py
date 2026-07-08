@@ -1,4 +1,5 @@
 import AI_analyse_V1 as analyser
+import regex_formatting as refmt
 import os, json, time
 import pyperclip
 import base64
@@ -13,7 +14,7 @@ class QualityCheckStep1():
         self.log = log_callback
         self.result = result_callback
         self.stop = stop_signal
-        self.analyser = analyser.AsyncAnalyser()
+        self.analyser = analyser.AsyncAnalyser(stop_event=self.stop)
         self._user_input = input_num_for_AI
         self.page_1: Page = None
         self.page_2: Page = None
@@ -79,11 +80,15 @@ class QualityCheckStep1():
             return (sn, "")
         self.log(f"正在OCR/...")
         problem_alltext = await self.problem_ocr(self.pic2base64(imgs))
-        self.log("OCR 已完成")
+        if problem_alltext == '' or type(json.loads(problem_alltext)) == list:
+            self.log(f"OCR超时（300s）或失败。")
+            problem_alltext = '{"OCR_Result":"OCR Failed"}'
+        else:
+            self.log("OCR 已完成")
         answer = await self.jump_and_search_copy_and_return(self.page_1, self.page_2)
         self.log(f"本页题目信息获取完成")
 
-        return (sn, {"problem": problem_alltext, "answer": answer})
+        return (sn, {"problem": json.loads(problem_alltext)["OCR_Result"], "answer": refmt.process_text(answer)})
 
     # 收纳所有数据
     async def gather_alldata(self):
