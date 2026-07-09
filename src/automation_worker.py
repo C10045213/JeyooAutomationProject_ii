@@ -45,6 +45,7 @@ class AutomationWorker(QThread):
         self._savenext_requested = False
         self._fill_requested = False
         self._auto_fill_enabled = False
+        self._save_mode = 0
         self._selected_forms = {"problem", "keypoint", "keypoint_plus", "analysis", "discuss", "difficulty", "answer"}
         self._connected = False
         self._dialog_listeners_registered = set()
@@ -175,7 +176,8 @@ class AutomationWorker(QThread):
         else:
             self.log_signal.emit(f"未设置策略，或当前策略无此函数。")
 
-    def request_set_save_mode(self, mode: int):
+    def set_save_mode(self, mode: int):
+        self._save_mode = mode
         if self.current_strategy and hasattr(self.current_strategy, 'set_save_mode'):
             self.current_strategy.set_save_mode(mode)
         else:
@@ -422,6 +424,8 @@ class AutomationWorker(QThread):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
         if hasattr(self.current_strategy, 'set_selected_forms'):
             self.current_strategy.set_selected_forms(self._selected_forms)
+        if hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(self._save_mode)
         self.log_signal.emit(f"正在换工作模式: {task2.QualityCheckStep2.__doc__}")
         await self._do_reinit()
 
@@ -444,6 +448,8 @@ class AutomationWorker(QThread):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
         if hasattr(self.current_strategy, 'set_selected_forms'):
             self.current_strategy.set_selected_forms(self._selected_forms)
+        if hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(self._save_mode)
         self.log_signal.emit(f"正在切换工作模式: {mono_task2.MonoQualityCheckStep2.__doc__}")
         await self._do_reinit()
 
@@ -457,6 +463,8 @@ class AutomationWorker(QThread):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
         if hasattr(self.current_strategy, 'set_selected_forms'):
             self.current_strategy.set_selected_forms(self._selected_forms)
+        if hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(self._save_mode)
         self.log_signal.emit(f"正在切换工作模式: {mono_task2_concurrent.MonoQualityCheckStep2Concurrent.__doc__}")
         await self._do_reinit()
 
@@ -468,6 +476,8 @@ class AutomationWorker(QThread):
         self.current_strategy = mono_task3.MonoKeypointProcess(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
+        if hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(self._save_mode)
         self.log_signal.emit(f"正在切换工作模式: {mono_task3.MonoKeypointProcess.__doc__}")
         await self._do_reinit()
 
@@ -479,6 +489,8 @@ class AutomationWorker(QThread):
         self.current_strategy = mono_task3_concurrent.MonoKeypointProcessConcurrent(self.log_signal.emit, self.result_signal.emit, self._user_input, self.stop_signal)
         if hasattr(self.current_strategy, 'set_auto_fill'):
             self.current_strategy.set_auto_fill(self._auto_fill_enabled)
+        if hasattr(self.current_strategy, 'set_save_mode'):
+            self.current_strategy.set_save_mode(self._save_mode)
         self.log_signal.emit(f"正在切换工作模式: {mono_task3_concurrent.MonoKeypointProcessConcurrent.__doc__}")
         await self._do_reinit()
 

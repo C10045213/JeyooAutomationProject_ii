@@ -478,7 +478,7 @@ class MainWindow(QMainWindow):
     def _on_save_mode_changed(self):
         action = self.sender()
         if action and action.isChecked():
-            self.worker.request_set_save_mode(action.data())
+            self.worker.set_save_mode(action.data())
 
     def _compute_form_enabled(self):
         """表单按钮启用状态——由 current_strategy 类型决定，维护操作中强制禁用"""

@@ -41,7 +41,7 @@ class QualityCheckStep2():
     
     def request_save_composite(self):
         self._save_composite_requested.set()
-        self.log("收到保存/刷新指令...") 
+        self.log("收到保存指令...") 
 
     def set_save_mode(self, mode):
         action_map = {
@@ -406,14 +406,6 @@ class QualityCheckStep2():
 
             current_sn = await self._get_current_sn()
 
-            # 检查页码范围
-            current_pagenum = int(await self.page_1.locator(".tablebar:nth-child(2) > h2 > input").input_value())
-            if current_pagenum < pagenum_lowerlimit or current_pagenum > pagenum_upperlimit:
-                self.result("当前页面超范围")
-                previous_sn = current_sn
-                await asyncio.sleep(0.1)
-                continue
-
             if current_sn in self.output_dataset:
                 output_data = self.output_dataset[current_sn]
                 input_data = self.input_dataset[current_sn]
@@ -479,7 +471,7 @@ class QualityCheckStep2():
 
             is_filled = False
             previous_sn = current_sn
-            while tobefilled != {} and current_sn == previous_sn:
+            while tobefilled != {} and current_sn == previous_sn and self.stop.is_set() == False:
                 if self._auto_fill_enabled and tobefilled:
                     if not is_filled:
                         await self.fill_forms(tobefilled)
@@ -498,7 +490,7 @@ class QualityCheckStep2():
                     self._save_composite_requested.clear()
                     async with self._save_composite_lock:
                         for save_related_func in self._save_func:
-                            await save_related_func
+                            await save_related_func()
                         await asyncio.sleep(1)
 
                         if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
@@ -510,19 +502,6 @@ class QualityCheckStep2():
                 current_sn = await self._get_current_sn()
                 continue
             await asyncio.sleep(0.2)
-
-    
-    # def _formatize_ai_output2json(self, ai_output: str) -> str:
-    #     text = ai_output
-    #     text = text.replace("```", "")
-    #     text = text.replace("json\n", "")
-    #     text = text.replace("\\", "\\\\")
-    #     text = text.replace(" ", "")
-    #     text = text.replace("【", "")
-    #     text = text.replace("】", "")
-    #     text = text.replace(">", "＞")
-    #     text = text.replace("<", "＜")
-    #     return text
 
     def formatize_ai_output2json(self, ai_output: str):
         text = ai_output
@@ -926,7 +905,8 @@ class QualityCheckStep2():
 
     async def _refresh(self):
         try:
-            await self.page_1.get_by_role('link', name='刷新页面').first.click()
+            if await self.page_1.get_by_role('link', name='刷新数据').first.is_visible():
+                await self.page_1.get_by_role('link', name='刷新数据').first.click()
         except Exception as e:
             self.log("***※刷新异常※***")
             print(e)
@@ -934,7 +914,8 @@ class QualityCheckStep2():
 
     async def _next(self):
         try:
-            await self.page_1.get_by_role('link', name='下一页').first.click()
+            if await self.page_1.get_by_role('link', name='下一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='下一页').first.click()
         except Exception as e:
             self.log("***※前进翻页异常※***")
             print(e)
@@ -942,7 +923,8 @@ class QualityCheckStep2():
 
     async def _previous(self):
         try:
-            await self.page_1.get_by_role('link', name='上一页').first.click()
+            if await self.page_1.get_by_role('link', name='上一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='上一页').first.click()
         except Exception as e:
             self.log("***※后退翻页异常※***")
             print(e)

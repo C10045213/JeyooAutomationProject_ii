@@ -40,7 +40,7 @@ class MonoQualityCheckStep2():
     
     def request_save_composite(self):
         self._save_composite_requested.set()
-        self.log("收到保存/刷新指令...") 
+        self.log("收到保存指令...") 
     
     def set_save_mode(self, mode):
         action_map = {
@@ -111,6 +111,14 @@ class MonoQualityCheckStep2():
                 num = -1
 
             # 1. 截图
+            self.log(f"1. 本题页码为:{num}, SN：\n{problem_sn}")
+            self.log("2. 正在获取题目、答案、考点...")
+            problem = refmt.process_text(await self._copy_problem())
+            answer = refmt.process_text(await self._copy_answer())
+            keypoint = refmt.process_text(await self._copy_keypoint())
+            discuss = refmt.process_text(await self._copy_discuss())
+            analysis = refmt.process_text(await self._copy_analyse())
+
             choices_locator = self.page_1.locator("table.qanwser")
             if await choices_locator.count() > 0:
                 imgs = await self._choices_screenshot()
@@ -120,14 +128,6 @@ class MonoQualityCheckStep2():
                     return
             else:
                 imgs = ''
-
-            self.log(f"1. 本题页码为:{num}, SN：\n{problem_sn}")
-            self.log("2. 正在获取题目、答案、考点...")
-            problem = refmt.process_text(await self._copy_problem())
-            answer = refmt.process_text(await self._copy_answer())
-            keypoint = refmt.process_text(await self._copy_keypoint())
-            discuss = refmt.process_text(await self._copy_discuss())
-            analysis = refmt.process_text(await self._copy_analyse())
 
             # 2. OCR
             choices_alltext = ''
@@ -204,7 +204,7 @@ class MonoQualityCheckStep2():
 
                 current_sn = await self.page_1.locator("td:nth-child(2) > a:nth-child(2)").first.inner_text()
                 is_filled = False
-                while problem_sn == current_sn:
+                while problem_sn == current_sn and self.stop.is_set():
                     # 防止反复填表
                     if is_filled == False:
                         if self._auto_fill_enabled:
@@ -226,7 +226,7 @@ class MonoQualityCheckStep2():
                         self._save_composite_requested.clear()
                         async with self._save_composite_lock:
                             for save_related_func in self._save_func:
-                                await save_related_func
+                                await save_related_func()
                             await asyncio.sleep(1)
 
                             if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
@@ -528,7 +528,8 @@ class MonoQualityCheckStep2():
 
     async def _refresh(self):
         try:
-            await self.page_1.get_by_role('link', name='刷新页面').first.click()
+            if await self.page_1.get_by_role('link', name='刷新数据').first.is_visible():
+                await self.page_1.get_by_role('link', name='刷新数据').first.click()
         except Exception as e:
             self.log("***※刷新异常※***")
             print(e)
@@ -536,7 +537,8 @@ class MonoQualityCheckStep2():
 
     async def _next(self):
         try:
-            await self.page_1.get_by_role('link', name='下一页').first.click()
+            if await self.page_1.get_by_role('link', name='下一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='下一页').first.click()
         except Exception as e:
             self.log("***※前进翻页异常※***")
             print(e)
@@ -544,7 +546,8 @@ class MonoQualityCheckStep2():
 
     async def _previous(self):
         try:
-            await self.page_1.get_by_role('link', name='上一页').first.click()
+            if await self.page_1.get_by_role('link', name='上一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='上一页').first.click()
         except Exception as e:
             self.log("***※后退翻页异常※***")
             print(e)

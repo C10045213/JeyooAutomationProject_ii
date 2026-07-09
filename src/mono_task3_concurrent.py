@@ -40,7 +40,7 @@ class MonoKeypointProcessConcurrent():
 
     def request_save_composite(self):
         self._save_composite_requested.set()
-        self.log("收到保存/刷新指令...")
+        self.log("收到提交指令...")
 
     def set_save_mode(self, mode):
         action_map = {
@@ -76,7 +76,7 @@ class MonoKeypointProcessConcurrent():
     async def locate_pages(self, pages):
         for page in pages:
             try:
-                if await page.locator(".BUTTONS_SELECTOR:nth-child(1)").is_visible():
+                if await page.get_by_role("button", name="取消加工").first.is_visible():
                     self.page_1 = page
                     self.log(f"已锁定考点加工页面: {await page.title()}")
             except Exception:
@@ -98,7 +98,7 @@ class MonoKeypointProcessConcurrent():
             self.log("页面未定位，非法操作。")
             return ("", "")
 
-        if not await self.page_1.locator(".BUTTONS_SELECTOR:nth-child(1)").is_visible():
+        if not await self.page_1.get_by_role("button", name="取消加工").first.is_visible():
             self.log("非目标页面，请重连。")
             return ("", "")
 
@@ -301,17 +301,6 @@ class MonoKeypointProcessConcurrent():
 
             current_sn = await self._get_current_sn()
 
-            try:
-                current_pagenum = int(await self.page_1.locator(".tablebar:nth-child(2) > h2 > input").input_value())
-            except Exception:
-                current_pagenum = pagenum_lowerlimit
-
-            if current_pagenum < pagenum_lowerlimit or current_pagenum > pagenum_upperlimit:
-                self.result("当前页面超范围")
-                previous_sn = current_sn
-                await asyncio.sleep(0.1)
-                continue
-
             if current_sn in self.output_dataset:
                 output_data = self.output_dataset[current_sn]
                 self.result(f"```json\n" + json.dumps(output_data, indent=2, ensure_ascii=False) + "\n```")
@@ -328,7 +317,7 @@ class MonoKeypointProcessConcurrent():
 
             is_filled = False
             previous_sn = current_sn
-            while tobefilled != {} and current_sn == previous_sn:
+            while tobefilled != {} and current_sn == previous_sn and self.stop.is_set() == False :
                 if self._auto_fill_enabled and tobefilled:
                     if not is_filled:
                         await self._fill_forms(tobefilled)
@@ -346,8 +335,10 @@ class MonoKeypointProcessConcurrent():
                 if self._save_composite_requested.is_set():
                     self._save_composite_requested.clear()
                     async with self._save_composite_lock:
-                        await self._submit()
-                        await asyncio.sleep(1)
+                        for func in self._save_func:
+                            await func()
+                            await asyncio.sleep(1)
+
                         if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
                             await self.page_1.locator("div#_messsage").click()
                         if await self.page_1.locator("div#_messsage").is_visible(timeout=1000):
@@ -509,7 +500,8 @@ class MonoKeypointProcessConcurrent():
 
     async def _refresh(self):
         try:
-            await self.page_1.get_by_role('link', name='刷新页面').first.click()
+            if await self.page_1.get_by_role('link', name='刷新数据').first.is_visible():
+                await self.page_1.get_by_role('link', name='刷新数据').first.click()
         except Exception as e:
             self.log("***※刷新异常※***")
             print(e)
@@ -517,7 +509,8 @@ class MonoKeypointProcessConcurrent():
 
     async def _next(self):
         try:
-            await self.page_1.get_by_role('link', name='下一页').first.click()
+            if await self.page_1.get_by_role('link', name='下一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='下一页').first.click()
         except Exception as e:
             self.log("***※前进翻页异常※***")
             print(e)
@@ -525,7 +518,8 @@ class MonoKeypointProcessConcurrent():
 
     async def _previous(self):
         try:
-            await self.page_1.get_by_role('link', name='上一页').first.click()
+            if await self.page_1.get_by_role('link', name='上一页').first.is_visible():
+                await self.page_1.get_by_role('link', name='上一页').first.click()
         except Exception as e:
             self.log("***※后退翻页异常※***")
             print(e)
